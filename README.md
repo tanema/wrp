@@ -45,3 +45,11 @@ Run `wrp add [repourl] [picks]`
 # Remove a dependency
 
 Run `wrp add repourl
+
+# Installation
+
+```
+> git clone git@github.com:tanema/wrp.git
+> cd wrp
+> go install .
+```
