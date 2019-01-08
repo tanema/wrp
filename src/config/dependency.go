@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/md5"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -21,27 +23,25 @@ import (
 
 var errUnableToFindTag = fmt.Errorf("unable to find tag for repo")
 
-type verType int
-
-var (
-	hashVersion   verType = 1 // iota is undefined for some reason?
-	tagVersion    verType = 2
-	branchVersion verType = 3
-)
-
 // Dependency describes a single dependency to fetch and files inside to keep
 type Dependency struct {
-	Pick []string `json:"pick,omitempty"`
+	Pick   []string `json:"pick,omitempty"`
+	Tag    string   `json:"tag,omitempty"`
+	Branch string   `json:"branch,omitempty"`
+	Hash   string   `json:"hash,omitempty"`
+	Check  string   `json:"check,omitempty"`
 
-	versionType verType
-	version     string
-	url         string
-	fs          billy.Filesystem
+	url string
+	fs  billy.Filesystem
 }
 
-func (dep *Dependency) fetch(url string) error {
+func (dep *Dependency) MarshalJSON() ([]byte, error) {
+	return json.Marshal(dep)
+}
+
+func (dep *Dependency) fetch(dest string, url string, lock Dependency) error {
 	var err error
-	dep.url, dep.versionType, dep.version, err = parseURL(url)
+	dep.url, err = parseURL(url)
 	if err != nil {
 		return err
 	}
@@ -49,63 +49,60 @@ func (dep *Dependency) fetch(url string) error {
 	return err
 }
 
-// name@tag
-// name#branch
-// name!hash
-func parseURL(repourl string) (string, verType, string, error) {
-	var versionType verType
-	var version string
-	var splitURL string
-	var parts []string
-	if parts = strings.SplitN(repourl, "@", 2); len(parts) > 1 {
-		versionType = tagVersion
-	} else if parts = strings.SplitN(repourl, "#", 2); len(parts) > 1 {
-		versionType = branchVersion
-	} else if parts = strings.SplitN(repourl, "!", 2); len(parts) > 1 {
-		versionType = hashVersion
-	} else {
-		versionType = hashVersion
-	}
-	splitURL = parts[0]
-	if len(parts) > 1 {
-		version = parts[1]
-	}
-
-	if strings.HasPrefix(splitURL, "http://") || strings.HasPrefix(splitURL, "git@") {
-		return "", versionType, version, fmt.Errorf("invalid dependency url %v please only use domain", splitURL)
-	}
-	_, err := url.Parse("https://" + splitURL)
+func (dep *Dependency) requiresUpdate(dest string, lock Dependency) bool {
+	sum, err := dep.calcChecksum(dest)
 	if err != nil {
-		return "", versionType, version, fmt.Errorf("cannot parse repo url %v, received err: %v", splitURL, err)
+		return true
 	}
-	return splitURL, versionType, version, nil
+	if lock.Check != sum {
+		return true
+	}
+	return lock.Tag != dep.Tag && lock.Branch != dep.Branch && lock.Hash != dep.Hash
 }
 
-func (dep *Dependency) formatURL() string {
-	switch dep.versionType {
-	case tagVersion:
-		return dep.url + "@" + dep.version
-	case branchVersion:
-		return dep.url + "#" + dep.version
-	case hashVersion:
-		return dep.url + "!" + dep.version
+func parseURL(repourl string) (string, error) {
+	if strings.HasPrefix(repourl, "http://") || strings.HasPrefix(repourl, "git@") {
+		return "", fmt.Errorf("invalid dependency url %v please only use domain", repourl)
 	}
-	return ""
+	_, err := url.Parse("https://" + repourl)
+	if err != nil {
+		return "", fmt.Errorf("cannot parse repo url %v, received err: %v", repourl, err)
+	}
+	return repourl, nil
+}
+
+func (dep *Dependency) calcChecksum(dest string) (string, error) {
+	hasher := md5.New()
+	if len(dep.Pick) > 0 {
+		for _, pick := range dep.Pick {
+			if err := file.Sum(filepath.Join(dest, pick), hasher); err != nil {
+				return "", err
+			}
+		}
+	} else {
+		baseName := strings.TrimSuffix(path.Base(dep.url), ".git")
+		if err := file.Sum(filepath.Join(dest, baseName), hasher); err != nil {
+			return "", err
+		}
+	}
+	return fmt.Sprintf("%x", hasher.Sum(nil)), nil
 }
 
 func (dep *Dependency) write(dest string) error {
+	hasher := md5.New()
 	if len(dep.Pick) > 0 {
 		for _, pick := range dep.Pick {
-			if err := file.Copy(dep.fs, pick, filepath.Join(dest, pick)); err != nil {
+			if err := file.Copy(dep.fs, pick, filepath.Join(dest, pick), hasher); err != nil {
 				return err
 			}
 		}
 	} else {
 		baseName := strings.TrimSuffix(path.Base(dep.url), ".git")
-		if err := file.Copy(dep.fs, ".", filepath.Join(dest, baseName)); err != nil {
+		if err := file.Copy(dep.fs, ".", filepath.Join(dest, baseName), hasher); err != nil {
 			return err
 		}
 	}
+	dep.Check = fmt.Sprintf("%x", hasher.Sum(nil))
 	return nil
 }
 
@@ -143,25 +140,23 @@ func (dep *Dependency) getState() (billy.Filesystem, error) {
 		return fs, err
 	}
 
-	if dep.version == "" {
-		if dep.version, err = getRepoTag(repo); err == errUnableToFindTag {
-			if dep.version, err = getHeadHash(repo); err != nil {
+	if dep.Tag == "" && dep.Branch == "" && dep.Hash == "" {
+		if dep.Tag, err = getRepoTag(repo); err == errUnableToFindTag {
+			if dep.Hash, err = getHeadHash(repo); err != nil {
 				return fs, fmt.Errorf("unable to pin dependency: %v", err)
 			}
 		} else if err != nil {
 			return fs, fmt.Errorf("problem fetching tags: %v", err)
-		} else {
-			dep.versionType = tagVersion
 		}
 	}
 
-	switch dep.versionType {
-	case tagVersion:
-		return fs, tree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewTagReferenceName(dep.version)})
-	case branchVersion:
-		return fs, tree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName(dep.version)})
-	case hashVersion:
-		return fs, tree.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(dep.version)})
+	if dep.Tag != "" {
+		// TODO: version range
+		return fs, tree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewTagReferenceName(dep.Tag)})
+	} else if dep.Branch != "" {
+		return fs, tree.Checkout(&git.CheckoutOptions{Branch: plumbing.NewBranchReferenceName(dep.Branch)})
+	} else if dep.Hash != "" {
+		return fs, tree.Checkout(&git.CheckoutOptions{Hash: plumbing.NewHash(dep.Hash)})
 	}
 
 	return fs, nil

@@ -11,22 +11,21 @@ import (
 
 // Config descripts a wrp config
 type Config struct {
-	Destination  string                 `json:"destination"`
-	Dependencies map[string]*Dependency `json:"dependencies"`
+	Destination     string                `json:"destination"`
+	Dependencies    map[string]Dependency `json:"dependencies"`
+	DependencyLocks map[string]Dependency `json:"dependency_locks"`
 }
 
 // Parse will find and parse the config file
 func Parse() (*Config, error) {
-	jsonFile, err := findConfig()
+	configBytes, err := findConfig()
 	if err != nil {
 		return nil, err
 	}
-	defer jsonFile.Close()
-
-	return parseConfigFile(jsonFile)
+	return parseConfigFile(configBytes)
 }
 
-func findConfig() (*os.File, error) {
+func findConfig() ([]byte, error) {
 	pwd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("Could not get working directory: %v", err)
@@ -35,17 +34,29 @@ func findConfig() (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Could not find wrp.json file")
 	}
-	return jsonFile, err
-}
-
-func parseConfigFile(file *os.File) (*Config, error) {
-	configBytes, err := ioutil.ReadAll(file)
+	configBytes, err := ioutil.ReadAll(jsonFile)
 	if err != nil {
 		return nil, fmt.Errorf("Could not read wrp.json file")
 	}
+	if err := jsonFile.Close(); err != nil {
+		return nil, err
+	}
+	return configBytes, err
+}
+
+func parseConfigFile(configBytes []byte) (*Config, error) {
 	config := &Config{}
 	if err := json.Unmarshal([]byte(configBytes), config); err != nil {
 		return nil, fmt.Errorf("Problem parsing json in wrp.json file: %v", err)
+	}
+	if config.Destination == "" {
+		config.Destination = "vnd"
+	}
+	if config.Dependencies == nil {
+		config.Dependencies = map[string]Dependency{}
+	}
+	if config.DependencyLocks == nil {
+		config.DependencyLocks = map[string]Dependency{}
 	}
 	return config, nil
 }
@@ -56,68 +67,68 @@ func (config *Config) FetchAllDependencies() error {
 	for url := range config.Dependencies {
 		urls = append(urls, url)
 	}
-
 	for _, url := range urls {
 		fmt.Println(url)
-		dep := config.Dependencies[url]
-		if err := dep.remove(config.Destination); err != nil {
-			return err
-		}
-		if err := dep.fetch(url); err != nil {
-			return err
-		}
-		if path := dep.formatURL(); path != url {
-			config.Dependencies[path] = dep
-			delete(config.Dependencies, url)
-		}
-		// TODO: nested deps?
-		if err := dep.write(config.Destination); err != nil {
-			return err
-		}
+		config.addDep(url, false)
 	}
 	return nil
 }
 
-// Add will add a new dependency
-// name@tag
-// name#branch
-// name!hash
-func (config *Config) Add(url string, pick []string) error {
-	dep := &Dependency{Pick: pick}
-	if err := dep.fetch(url); err != nil {
-		return err
+func (config *Config) addDep(url string, force bool) error {
+	dep := config.Dependencies[url]
+	lock := config.DependencyLocks[url]
+	if force || dep.requiresUpdate(config.Destination, lock) {
+		if err := lock.remove(config.Destination); err != nil {
+			return err
+		}
+		if err := dep.remove(config.Destination); err != nil {
+			return err
+		}
+		if err := dep.fetch(config.Destination, url, config.DependencyLocks[url]); err != nil {
+			return err
+		}
+		if err := dep.write(config.Destination); err != nil {
+			return err
+		}
+		config.DependencyLocks[url] = dep
 	}
-	if err := dep.write(config.Destination); err != nil {
-		return err
-	}
-	config.Dependencies[dep.formatURL()] = dep
 	return nil
+}
+
+// Add a new dep to config
+func (config *Config) Add(url string, pick []string) error {
+	tag := ""
+	if parts := strings.SplitN(url, "@", 2); len(parts) > 1 {
+		url = parts[0]
+		tag = parts[1]
+	}
+	config.Dependencies[url] = Dependency{Pick: pick, Tag: tag}
+	return config.addDep(url, false)
+}
+
+// Add a new dep to config
+func (config *Config) Update(url string) error {
+	if _, ok := config.Dependencies[url]; !ok {
+		return fmt.Errorf("dependency with url %v not found in config", url)
+	}
+	return config.addDep(url, true)
 }
 
 // Remove will remove a dependency
 func (config *Config) Remove(url string) error {
-	u, dep, err := config.findDep(url)
-	if err != nil {
-		return err
+	dep, ok := config.DependencyLocks[url]
+	if !ok {
+		dep, ok = config.Dependencies[url]
+		if !ok {
+			return fmt.Errorf("dependency %v is not part of the project", url)
+		}
 	}
 	if err := dep.remove(config.Destination); err != nil {
 		return err
 	}
-	delete(config.Dependencies, u)
+	delete(config.Dependencies, url)
+	delete(config.DependencyLocks, url)
 	return nil
-}
-
-func (config *Config) findDep(repourl string) (string, *Dependency, error) {
-	dep, ok := config.Dependencies[repourl]
-	if ok {
-		return repourl, dep, nil
-	}
-	for u := range config.Dependencies {
-		if strings.HasPrefix(u, repourl) {
-			return u, config.Dependencies[u], nil
-		}
-	}
-	return "", nil, fmt.Errorf("dependency %v is not part of the project", repourl)
 }
 
 // Save writes the config back out to save any pinned versions
