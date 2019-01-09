@@ -1,19 +1,21 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/sync/errgroup"
+	"gopkg.in/yaml.v2"
 )
 
 // Config descripts a wrp config
 type Config struct {
-	Destination     string                `json:"destination"`
-	Dependencies    map[string]Dependency `json:"dependencies"`
-	DependencyLocks map[string]Dependency `json:"dependency_locks"`
+	Destination     string                `yaml:"destination"`
+	Dependencies    map[string]Dependency `yaml:"dependencies"`
+	DependencyLocks map[string]Dependency `yaml:"dependency_locks"`
 }
 
 // Parse will find and parse the config file
@@ -30,15 +32,15 @@ func findConfig() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Could not get working directory: %v", err)
 	}
-	jsonFile, err := os.Open(filepath.Join(pwd, "wrp.json"))
+	yamlFile, err := os.Open(filepath.Join(pwd, "wrp.yaml"))
 	if err != nil {
-		return nil, fmt.Errorf("Could not find wrp.json file")
+		return nil, fmt.Errorf("Could not find wrp.yaml file")
 	}
-	configBytes, err := ioutil.ReadAll(jsonFile)
+	configBytes, err := ioutil.ReadAll(yamlFile)
 	if err != nil {
-		return nil, fmt.Errorf("Could not read wrp.json file")
+		return nil, fmt.Errorf("Could not read wrp.yaml file")
 	}
-	if err := jsonFile.Close(); err != nil {
+	if err := yamlFile.Close(); err != nil {
 		return nil, err
 	}
 	return configBytes, err
@@ -46,8 +48,8 @@ func findConfig() ([]byte, error) {
 
 func parseConfigFile(configBytes []byte) (*Config, error) {
 	config := &Config{}
-	if err := json.Unmarshal([]byte(configBytes), config); err != nil {
-		return nil, fmt.Errorf("Problem parsing json in wrp.json file: %v", err)
+	if err := yaml.Unmarshal([]byte(configBytes), config); err != nil {
+		return nil, fmt.Errorf("Problem parsing yaml in wrp.yaml file: %v", err)
 	}
 	if config.Destination == "" {
 		config.Destination = "vnd"
@@ -62,16 +64,21 @@ func parseConfigFile(configBytes []byte) (*Config, error) {
 }
 
 // FetchAllDependencies will fetch the dependencies
-func (config *Config) FetchAllDependencies() error {
+func (config *Config) FetchAllDependencies(force bool) error {
+	var g errgroup.Group
 	urls := []string{}
 	for url := range config.Dependencies {
 		urls = append(urls, url)
 	}
 	for _, url := range urls {
-		fmt.Println(url)
-		config.addDep(url, false)
+		depurl := url
+		fmt.Println(depurl)
+		g.Go(func() error {
+			return config.addDep(depurl, force)
+		})
 	}
-	return nil
+
+	return g.Wait()
 }
 
 func (config *Config) addDep(url string, force bool) error {
@@ -133,7 +140,7 @@ func (config *Config) Remove(url string) error {
 
 // Save writes the config back out to save any pinned versions
 func (config *Config) Save() error {
-	configJSON, err := json.MarshalIndent(config, "", "  ")
+	configYaml, err := yaml.Marshal(config)
 	if err != nil {
 		return err
 	}
@@ -141,5 +148,5 @@ func (config *Config) Save() error {
 	if err != nil {
 		return fmt.Errorf("Could not get working directory: %v", err)
 	}
-	return ioutil.WriteFile(filepath.Join(pwd, "wrp.json"), configJSON, 0644)
+	return ioutil.WriteFile(filepath.Join(pwd, "wrp.yaml"), configYaml, 0644)
 }

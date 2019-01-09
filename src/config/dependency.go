@@ -25,11 +25,11 @@ var errUnableToFindTag = fmt.Errorf("unable to find tag for repo")
 
 // Dependency describes a single dependency to fetch and files inside to keep
 type Dependency struct {
-	Pick   []string `json:"pick,omitempty"`
-	Tag    string   `json:"tag,omitempty"`
-	Branch string   `json:"branch,omitempty"`
-	Hash   string   `json:"hash,omitempty"`
-	Check  string   `json:"check,omitempty"`
+	Pick   []string `json:"pick,omitempty" yaml:"pick,omitempty,flow"`
+	Tag    string   `json:"tag,omitempty" yaml:"tag,omitempty,flow"`
+	Branch string   `json:"branch,omitempty" yaml:"branch,omitempty,flow"`
+	Hash   string   `json:"hash,omitempty" yaml:"hash,omitempty,flow"`
+	Check  string   `json:"check,omitempty" yaml:"check,omitempty,flow"`
 
 	url string
 	fs  billy.Filesystem

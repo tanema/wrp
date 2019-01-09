@@ -26,7 +26,7 @@ It is probably not suitable for many people except me.`,
 		return err
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return cfg.FetchAllDependencies()
+		return cfg.FetchAllDependencies(false)
 	},
 	PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
 		return cfg.Save()
@@ -47,7 +47,7 @@ var installCmd = &cobra.Command{
 	Short: "install dependencies",
 	Long:  `install dependencies`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return cfg.FetchAllDependencies()
+		return cfg.FetchAllDependencies(false)
 	},
 }
 
@@ -56,6 +56,9 @@ var updateCmd = &cobra.Command{
 	Short: "update a dependency in project",
 	Long:  "update a dependency in project",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return cfg.FetchAllDependencies(true)
+		}
 		return cfg.Update(args[0])
 	},
 }
