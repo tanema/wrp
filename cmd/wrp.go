@@ -21,8 +21,16 @@ It is probably not suitable for many people except me.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if cmd.CalledAs() == "init" {
+			cfg = config.Default
+			return nil
+		}
 		var err error
 		cfg, err = config.Parse()
+		if err != nil && err == config.ErrNotFound && cmd.CalledAs() == "add" {
+			cfg = config.Default
+			return nil
+		}
 		return err
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -39,6 +47,15 @@ var versionCmd = &cobra.Command{
 	Long:  `All software has versions. This is Theme Kit's version.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("wrp %s %s/%s", version, runtime.GOOS, runtime.GOARCH)
+	},
+}
+
+var initCmd = &cobra.Command{
+	Use:   "init",
+	Short: "init config",
+	Long:  `init config`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return nil
 	},
 }
 
@@ -85,5 +102,5 @@ var addCmd = &cobra.Command{
 }
 
 func init() {
-	WrpCmd.AddCommand(addCmd, removeCmd, updateCmd, versionCmd)
+	WrpCmd.AddCommand(initCmd, addCmd, removeCmd, updateCmd, versionCmd)
 }

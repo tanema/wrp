@@ -14,11 +14,21 @@ import (
 	"github.com/tanema/wrp/src/status"
 )
 
+// ErrNotFound is the error returns when the config is not present
+var ErrNotFound = fmt.Errorf("Could not find wrp.yaml file")
+
 // Config descripts a wrp config
 type Config struct {
 	Destination     string                `yaml:"destination"`
 	Dependencies    map[string]Dependency `yaml:"dependencies"`
-	DependencyLocks map[string]Dependency `yaml:"dependency_locks"`
+	DependencyLocks map[string]Dependency `yaml:"dependency_locks,omitempty"`
+}
+
+// Default is the default config
+var Default = &Config{
+	Destination:     "vnd",
+	Dependencies:    map[string]Dependency{},
+	DependencyLocks: map[string]Dependency{},
 }
 
 // Parse will find and parse the config file
@@ -37,7 +47,7 @@ func findConfig() ([]byte, error) {
 	}
 	yamlFile, err := os.Open(filepath.Join(pwd, "wrp.yaml"))
 	if err != nil {
-		return nil, fmt.Errorf("Could not find wrp.yaml file")
+		return nil, ErrNotFound
 	}
 	configBytes, err := ioutil.ReadAll(yamlFile)
 	if err != nil {

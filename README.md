@@ -1,23 +1,25 @@
 # wrp - git based project dependency management
-This is not a good solution, this is a quick & dirty solution. I wrote this mainly
-to quickly manage lua libraries for Love2d where most libraries want you to download
-the repo and copy and paste a single file into your project.
+This is a quick & dirty solution. I wrote this mainly to quickly manage lua
+libraries for Love2d where most libraries require you to download the repo,
+then copy and paste a single file into your project.
 
-I hated doing this so I wrote wrp instead.
+I hated doing this so I wrote `wrp` instead.
 
 # CLI
 
-Run `wrp --help` for command help
+- Run `wrp --help` for command help
+- Run `wrp` to install dependencie
+- Run `wrp add github.com/kikito/anim8 anim8.lua` to get the anim8 repo and save the anim8.lua file
 
 # What this does
 - Will download any git repo by url
 - Check out a tag/branch/revision
 - Pick out the files that you want
-- Write them to disk
-- Update wrp.yaml with pinned versions
+- Write them to a chosen destination folder
+- Update `wrp.yaml` with pinned versions
 
 # What this does not do (not sure if I care to implement them)
-- Dependency tree of any sort. it will not solve your version issues
+- Dependency tree of any sort. It will not solve your version issues
 - Nested manifests
 
 # How does it work
