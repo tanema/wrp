@@ -2,7 +2,6 @@ package config
 
 import (
 	"crypto/md5"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -25,18 +24,14 @@ var errUnableToFindTag = fmt.Errorf("unable to find tag for repo")
 
 // Dependency describes a single dependency to fetch and files inside to keep
 type Dependency struct {
-	Pick   []string `json:"pick,omitempty" yaml:"pick,omitempty,flow"`
-	Tag    string   `json:"tag,omitempty" yaml:"tag,omitempty,flow"`
-	Branch string   `json:"branch,omitempty" yaml:"branch,omitempty,flow"`
-	Hash   string   `json:"hash,omitempty" yaml:"hash,omitempty,flow"`
-	Check  string   `json:"check,omitempty" yaml:"check,omitempty,flow"`
+	Pick   []string `yaml:"pick,omitempty,flow"`
+	Tag    string   `yaml:"tag,omitempty,flow"`
+	Branch string   `yaml:"branch,omitempty,flow"`
+	Hash   string   `yaml:"hash,omitempty,flow"`
+	Check  string   `yaml:"check,omitempty,flow"`
 
 	url string
 	fs  billy.Filesystem
-}
-
-func (dep *Dependency) MarshalJSON() ([]byte, error) {
-	return json.Marshal(dep)
 }
 
 func (dep *Dependency) fetch(dest string, url string, lock Dependency) error {

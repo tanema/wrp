@@ -9,6 +9,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v2"
+
+	"github.com/tanema/wrp/src/colors"
+	"github.com/tanema/wrp/src/status"
 )
 
 // Config descripts a wrp config
@@ -70,35 +73,47 @@ func (config *Config) FetchAllDependencies(force bool) error {
 	for url := range config.Dependencies {
 		urls = append(urls, url)
 	}
+	statusGroup := status.New()
 	for _, url := range urls {
 		depurl := url
-		fmt.Println(depurl)
 		g.Go(func() error {
-			return config.addDep(depurl, force)
+			line, err := statusGroup.Add(depurl)
+			if err != nil {
+				return err
+			}
+			return config.addDep(depurl, line, force)
 		})
 	}
 
 	return g.Wait()
 }
 
-func (config *Config) addDep(url string, force bool) error {
+func (config *Config) addDep(url string, line *status.Status, force bool) (err error) {
+	defer func() {
+		if err != nil {
+			line.Set(fmt.Sprintf("%v\t[%v:%v]", url, colors.Red("Err"), err))
+		}
+	}()
 	dep := config.Dependencies[url]
 	lock := config.DependencyLocks[url]
 	if force || dep.requiresUpdate(config.Destination, lock) {
-		if err := lock.remove(config.Destination); err != nil {
+		line.Set(fmt.Sprintf("%v\t[%v]", url, colors.Yellow("Updating")))
+		if err = lock.remove(config.Destination); err != nil {
 			return err
 		}
-		if err := dep.remove(config.Destination); err != nil {
+		if err = dep.remove(config.Destination); err != nil {
 			return err
 		}
-		if err := dep.fetch(config.Destination, url, config.DependencyLocks[url]); err != nil {
+		if err = dep.fetch(config.Destination, url, config.DependencyLocks[url]); err != nil {
 			return err
 		}
-		if err := dep.write(config.Destination); err != nil {
+		line.Set(fmt.Sprintf("%v\t[%v]", url, colors.Green("Saving")))
+		if err = dep.write(config.Destination); err != nil {
 			return err
 		}
 		config.DependencyLocks[url] = dep
 	}
+	line.Set(fmt.Sprintf("%v\t[%v]", url, colors.Green("OK")))
 	return nil
 }
 
@@ -110,15 +125,19 @@ func (config *Config) Add(url string, pick []string) error {
 		tag = parts[1]
 	}
 	config.Dependencies[url] = Dependency{Pick: pick, Tag: tag}
-	return config.addDep(url, false)
+	statusGroup := status.New()
+	line, _ := statusGroup.Add(url)
+	return config.addDep(url, line, false)
 }
 
-// Add a new dep to config
+// Update a new dep to config
 func (config *Config) Update(url string) error {
 	if _, ok := config.Dependencies[url]; !ok {
 		return fmt.Errorf("dependency with url %v not found in config", url)
 	}
-	return config.addDep(url, true)
+	statusGroup := status.New()
+	line, _ := statusGroup.Add(url)
+	return config.addDep(url, line, true)
 }
 
 // Remove will remove a dependency
