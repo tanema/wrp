@@ -68,6 +68,7 @@ var removeCmd = &cobra.Command{
 	Aliases: []string{"remove"},
 	Short:   "rm a dependency from project",
 	Long:    "rm a dependency from project",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cfg.Remove(args[0])
 	},
@@ -77,6 +78,7 @@ var addCmd = &cobra.Command{
 	Use:   "add [REPO] [PICKS]",
 	Short: "add a new dependency to project",
 	Long:  "add a new dependency to project",
+	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cfg.Add(args[0], args[1:])
 	},
