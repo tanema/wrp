@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"golang.org/x/sync/errgroup"
@@ -83,14 +84,15 @@ func (config *Config) FetchAllDependencies(force bool) error {
 	for url := range config.Dependencies {
 		urls = append(urls, url)
 	}
+	sort.Strings(urls)
 	statusGroup := status.New()
 	for _, url := range urls {
 		depurl := url
+		line, err := statusGroup.Add(depurl, "-")
+		if err != nil {
+			return err
+		}
 		g.Go(func() error {
-			line, err := statusGroup.Add(depurl)
-			if err != nil {
-				return err
-			}
 			return config.addDep(depurl, line, force)
 		})
 	}
@@ -101,13 +103,13 @@ func (config *Config) FetchAllDependencies(force bool) error {
 func (config *Config) addDep(url string, line *status.Status, force bool) (err error) {
 	defer func() {
 		if err != nil {
-			line.Set(fmt.Sprintf("%v\t[%v:%v]", url, colors.Red("Err"), err))
+			line.Set(fmt.Sprintf("%v:%v", colors.Red("Err"), err))
 		}
 	}()
 	dep := config.Dependencies[url]
 	lock := config.DependencyLocks[url]
 	if force || dep.requiresUpdate(config.Destination, lock) {
-		line.Set(fmt.Sprintf("%v\t[%v]", url, colors.Yellow("Updating")))
+		line.Set(colors.Yellow("Updating"))
 		if err = lock.remove(config.Destination); err != nil {
 			return err
 		}
@@ -117,13 +119,13 @@ func (config *Config) addDep(url string, line *status.Status, force bool) (err e
 		if err = dep.fetch(config.Destination, url, config.DependencyLocks[url]); err != nil {
 			return err
 		}
-		line.Set(fmt.Sprintf("%v\t[%v]", url, colors.Green("Saving")))
+		line.Set(colors.Green("Saving"))
 		if err = dep.write(config.Destination); err != nil {
 			return err
 		}
 		config.DependencyLocks[url] = dep
 	}
-	line.Set(fmt.Sprintf("%v\t[%v]", url, colors.Green("OK")))
+	line.Set(colors.Green("OK"))
 	return nil
 }
 
@@ -136,7 +138,7 @@ func (config *Config) Add(url string, pick []string) error {
 	}
 	config.Dependencies[url] = Dependency{Pick: pick, Tag: tag}
 	statusGroup := status.New()
-	line, _ := statusGroup.Add(url)
+	line, _ := statusGroup.Add(url, "-")
 	return config.addDep(url, line, false)
 }
 
@@ -146,7 +148,7 @@ func (config *Config) Update(url string) error {
 		return fmt.Errorf("dependency with url %v not found in config", url)
 	}
 	statusGroup := status.New()
-	line, _ := statusGroup.Add(url)
+	line, _ := statusGroup.Add(url, "-")
 	return config.addDep(url, line, true)
 }
 

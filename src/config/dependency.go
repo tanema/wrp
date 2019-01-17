@@ -84,21 +84,21 @@ func (dep *Dependency) calcChecksum(dest string) (string, error) {
 }
 
 func (dep *Dependency) write(dest string) error {
-	hasher := md5.New()
 	if len(dep.Pick) > 0 {
 		for _, pick := range dep.Pick {
-			if err := file.Copy(dep.fs, pick, filepath.Join(dest, pick), hasher); err != nil {
+			if err := file.Copy(dep.fs, pick, filepath.Join(dest, pick)); err != nil {
 				return err
 			}
 		}
 	} else {
 		baseName := strings.TrimSuffix(path.Base(dep.url), ".git")
-		if err := file.Copy(dep.fs, ".", filepath.Join(dest, baseName), hasher); err != nil {
+		if err := file.Copy(dep.fs, ".", filepath.Join(dest, baseName)); err != nil {
 			return err
 		}
 	}
-	dep.Check = fmt.Sprintf("%x", hasher.Sum(nil))
-	return nil
+	sum, err := dep.calcChecksum(dest)
+	dep.Check = sum
+	return err
 }
 
 func (dep *Dependency) remove(dest string) error {

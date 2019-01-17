@@ -7,9 +7,22 @@ I hated doing this so I wrote `wrp` instead.
 
 # CLI
 
-- Run `wrp --help` for command help
-- Run `wrp` to install dependencie
-- Run `wrp add github.com/kikito/anim8 anim8.lua` to get the anim8 repo and save the anim8.lua file
+Run `wrp` to install all of your dependencies, but otherwise:
+
+```
+Usage:
+  wrp [flags]
+  wrp [command]
+Available Commands:
+  add         add a new dependency to project
+  help        Help about any command
+  init        init config
+  rm          rm a dependency from project
+  update      update a dependency in project
+  version     Print the version number of wrp
+Flags:
+  -h, --help   help for wrp
+```
 
 # What this does
 - Will download any git repo by url
