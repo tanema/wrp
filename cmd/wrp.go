@@ -44,7 +44,7 @@ It is probably not suitable for many people except me.`,
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print the version number of wrp",
-	Long:  `All software has versions. This is Theme Kit's version.`,
+	Long:  `All software has versions. This is wrp's version.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("wrp %s %s/%s", version, runtime.GOOS, runtime.GOARCH)
 	},
