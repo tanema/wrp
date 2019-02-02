@@ -52,7 +52,12 @@ func (dep *Dependency) requiresUpdate(dest string, lock Dependency) bool {
 	if lock.Check != sum {
 		return true
 	}
-	return lock.Tag != dep.Tag && lock.Branch != dep.Branch && lock.Hash != dep.Hash
+
+	tagChanged := dep.Tag != "" && lock.Tag != dep.Tag
+	branchChanged := dep.Branch != "" && lock.Branch != dep.Branch
+	hashChanged := dep.Hash != "" && lock.Hash != dep.Hash
+
+	return tagChanged || branchChanged || hashChanged
 }
 
 func parseURL(repourl string) (string, error) {
