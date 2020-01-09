@@ -8,11 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v2"
 
-	"github.com/tanema/wrp/src/colors"
-	"github.com/tanema/wrp/src/status"
+	"github.com/tanema/gluey"
 )
 
 // ErrNotFound is the error returns when the config is not present
@@ -20,6 +18,7 @@ var ErrNotFound = fmt.Errorf("Could not find wrp.yaml file")
 
 // Config descripts a wrp config
 type Config struct {
+	UI              *gluey.Ctx            `yaml:"-"`
 	Destination     string                `yaml:"destination"`
 	Dependencies    map[string]Dependency `yaml:"dependencies"`
 	DependencyLocks map[string]Dependency `yaml:"dependency_locks,omitempty"`
@@ -61,7 +60,7 @@ func findConfig() ([]byte, error) {
 }
 
 func parseConfigFile(configBytes []byte) (*Config, error) {
-	config := &Config{}
+	config := &Config{UI: gluey.New()}
 	if err := yaml.Unmarshal([]byte(configBytes), config); err != nil {
 		return nil, fmt.Errorf("Problem parsing yaml in wrp.yaml file: %v", err)
 	}
@@ -79,37 +78,33 @@ func parseConfigFile(configBytes []byte) (*Config, error) {
 
 // FetchAllDependencies will fetch the dependencies
 func (config *Config) FetchAllDependencies(force bool) error {
-	var g errgroup.Group
 	urls := []string{}
 	for url := range config.Dependencies {
 		urls = append(urls, url)
 	}
 	sort.Strings(urls)
-	statusGroup := status.New()
-	for _, url := range urls {
-		depurl := url
-		line, err := statusGroup.Add(depurl, "-")
-		if err != nil {
-			return err
-		}
-		g.Go(func() error {
-			return config.addDep(depurl, line, force)
-		})
+
+	title := "Checking dependencies"
+	if force {
+		title = "Updating dependencies"
 	}
 
-	return g.Wait()
+	return config.UI.InMeasuredFrame(title, func(ctx *gluey.Ctx, frame *gluey.Frame) error {
+		group := ctx.NewSpinGroup()
+		for _, url := range urls {
+			depurl := url
+			group.Go(depurl, func() error {
+				return config.addDep(depurl, force)
+			})
+		}
+		return config.UI.Debreif(group.Wait())
+	})
 }
 
-func (config *Config) addDep(url string, line *status.Status, force bool) (err error) {
-	defer func() {
-		if err != nil {
-			line.Set(fmt.Sprintf("%v:%v", colors.Red("Err"), err))
-		}
-	}()
+func (config *Config) addDep(url string, force bool) (err error) {
 	dep := config.Dependencies[url]
 	lock := config.DependencyLocks[url]
 	if force || dep.requiresUpdate(config.Destination, lock) {
-		line.Set(colors.Yellow("Updating"))
 		if err = lock.remove(config.Destination); err != nil {
 			return err
 		}
@@ -119,13 +114,11 @@ func (config *Config) addDep(url string, line *status.Status, force bool) (err e
 		if err = dep.fetch(config.Destination, url, config.DependencyLocks[url]); err != nil {
 			return err
 		}
-		line.Set(colors.Green("Saving"))
 		if err = dep.write(config.Destination); err != nil {
 			return err
 		}
 		config.DependencyLocks[url] = dep
 	}
-	line.Set(colors.Green("OK"))
 	return nil
 }
 
@@ -137,9 +130,7 @@ func (config *Config) Add(url string, pick []string) error {
 		tag = parts[1]
 	}
 	config.Dependencies[url] = Dependency{Pick: pick, Tag: tag}
-	statusGroup := status.New()
-	line, _ := statusGroup.Add(url, "-")
-	return config.addDep(url, line, false)
+	return config.UI.Spinner(url, func() error { return config.addDep(url, false) })
 }
 
 // Update a new dep to config
@@ -147,9 +138,7 @@ func (config *Config) Update(url string) error {
 	if _, ok := config.Dependencies[url]; !ok {
 		return fmt.Errorf("dependency with url %v not found in config", url)
 	}
-	statusGroup := status.New()
-	line, _ := statusGroup.Add(url, "-")
-	return config.addDep(url, line, true)
+	return config.UI.Spinner(url, func() error { return config.addDep(url, true) })
 }
 
 // Remove will remove a dependency

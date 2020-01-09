@@ -92,6 +92,9 @@ func (dep *Dependency) write(dest string) error {
 	if len(dep.Pick) > 0 {
 		for _, pick := range dep.Pick {
 			if err := file.Copy(dep.fs, pick, filepath.Join(dest, pick)); err != nil {
+				if os.IsNotExist(err) {
+					return fmt.Errorf("Cannot pick %s, it was not found in the repo", pick)
+				}
 				return err
 			}
 		}
@@ -141,12 +144,8 @@ func (dep *Dependency) getState() (billy.Filesystem, error) {
 	}
 
 	if dep.Tag == "" && dep.Branch == "" && dep.Hash == "" {
-		if dep.Tag, err = getRepoTag(repo); err == errUnableToFindTag {
-			if dep.Hash, err = getHeadHash(repo); err != nil {
-				return fs, fmt.Errorf("unable to pin dependency: %v", err)
-			}
-		} else if err != nil {
-			return fs, fmt.Errorf("problem fetching tags: %v", err)
+		if dep.Hash, err = getHeadHash(repo); err != nil {
+			return fs, fmt.Errorf("unable to pin dependency: %v", err)
 		}
 	}
 
